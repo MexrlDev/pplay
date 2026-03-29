@@ -52,7 +52,7 @@ jobs:
             --output $PKG_OUTPUT/pplay.pkg
 
       - name: Upload PKG artifact
-        uses: github/upload-artifact@latest
+        uses: actions/upload-artifact@v4
         with:
           name: pplay-ps4-pkg
           path: $PKG_OUTPUT/pplay.pkg
