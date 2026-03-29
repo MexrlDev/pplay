@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -24,7 +24,6 @@ jobs:
 
       - name: Setup PS4 Toolchain
         run: |
-          # Assuming you have ps4toolchain in your repo or preinstalled
           export PATH=$PS4_SDK_PATH/bin:$PATH
           ps4-clang --version
 
@@ -45,7 +44,6 @@ jobs:
         run: |
           cd build
           mkdir -p $PKG_OUTPUT
-          # Example PS4 packaging command (replace with your actual pkg tool)
           ps4-pkg-create \
             --title "${{ github.repository }}" \
             --title-id "PPLA00001" \
@@ -54,7 +52,7 @@ jobs:
             --output $PKG_OUTPUT/pplay.pkg
 
       - name: Upload PKG artifact
-        uses: actions/upload-artifact@v3
+        uses: github/upload-artifact@latest
         with:
           name: pplay-ps4-pkg
           path: $PKG_OUTPUT/pplay.pkg
