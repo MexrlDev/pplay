@@ -1,0 +1,60 @@
+name: Build PS4 Package
+
+on:
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  build-ps4:
+    name: Build PS4 PKG
+    runs-on: ubuntu-latest
+    env:
+      CMAKE_BUILD_TYPE: Release
+      PS4_SDK_PATH: /opt/ps4sdk
+      PKG_OUTPUT: ${{ github.workspace }}/pkg
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git pkg-config \
+              libbz2-dev libass-dev libmpv-dev ffmpeg
+
+      - name: Setup PS4 Toolchain
+        run: |
+          # Assuming you have ps4toolchain in your repo or preinstalled
+          export PATH=$PS4_SDK_PATH/bin:$PATH
+          ps4-clang --version
+
+      - name: Configure CMake
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. \
+            -DPLATFORM_PS4=ON \
+            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE
+
+      - name: Build
+        run: |
+          cd build
+          cmake --build . --config $CMAKE_BUILD_TYPE -j$(nproc)
+
+      - name: Package PS4 PKG
+        run: |
+          cd build
+          mkdir -p $PKG_OUTPUT
+          # Example PS4 packaging command (replace with your actual pkg tool)
+          ps4-pkg-create \
+            --title "${{ github.repository }}" \
+            --title-id "PPLA00001" \
+            --version "3.8" \
+            --input ./pplay \
+            --output $PKG_OUTPUT/pplay.pkg
+
+      - name: Upload PKG artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: pplay-ps4-pkg
+          path: $PKG_OUTPUT/pplay.pkg
