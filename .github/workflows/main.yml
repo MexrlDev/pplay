@@ -9,47 +9,30 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CMAKE_BUILD_TYPE: Release
-      PS4_SDK_PATH: /opt/ps4sdk
       PKG_OUTPUT: ${{ github.workspace }}/pkg
+      PS4_TOOLCHAIN_IMAGE: ghcr.io/cpasjuste/orbis-toolchain:latest # Example homebrew toolchain
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Pull PS4 toolchain Docker image
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake git pkg-config \
-              libbz2-dev libass-dev libmpv-dev ffmpeg
+          docker pull $PS4_TOOLCHAIN_IMAGE
 
-      - name: Setup PS4 Toolchain
+      - name: Build in Docker
         run: |
-          export PATH=$PS4_SDK_PATH/bin:$PATH
-          ps4-clang --version
-
-      - name: Configure CMake
-        run: |
-          mkdir -p build
-          cd build
-          cmake .. \
-            -DPLATFORM_PS4=ON \
-            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE
-
-      - name: Build
-        run: |
-          cd build
-          cmake --build . --config $CMAKE_BUILD_TYPE -j$(nproc)
-
-      - name: Package PS4 PKG
-        run: |
-          cd build
-          mkdir -p $PKG_OUTPUT
-          ps4-pkg-create \
-            --title "${{ github.repository }}" \
-            --title-id "PPLA00001" \
-            --version "3.8" \
-            --input ./pplay \
-            --output $PKG_OUTPUT/pplay.pkg
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            $PS4_TOOLCHAIN_IMAGE /bin/bash -c "\
+              apt-get update && apt-get install -y cmake pkg-config libbz2-dev libass-dev libmpv-dev ffmpeg && \
+              mkdir -p build && cd build && \
+              cmake .. -DPLATFORM_PS4=ON -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE && \
+              cmake --build . --config $CMAKE_BUILD_TYPE -j\$(nproc) && \
+              mkdir -p $PKG_OUTPUT && \
+              ps4-pkg-create --title '${{ github.repository }}' --title-id 'PPLA00001' --version '3.8' --input ./pplay --output $PKG_OUTPUT/pplay.pkg \
+            "
 
       - name: Upload PKG artifact
         uses: actions/upload-artifact@v4
