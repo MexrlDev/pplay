@@ -10,7 +10,7 @@ jobs:
     env:
       CMAKE_BUILD_TYPE: Release
       PKG_OUTPUT: ${{ github.workspace }}/pkg
-      PS4_TOOLCHAIN_PATH: /opt/ps4toolchain  # Update if using self-hosted or Docker
+      PS4_TOOLCHAIN_PATH: /opt/ps4toolchain
 
     steps:
       - name: Checkout repository
