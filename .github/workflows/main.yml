@@ -1,7 +1,7 @@
 name: Build PS4 Package
 
 on:
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:  # Manual trigger only
 
 jobs:
   build-ps4:
@@ -10,29 +10,54 @@ jobs:
     env:
       CMAKE_BUILD_TYPE: Release
       PKG_OUTPUT: ${{ github.workspace }}/pkg
-      PS4_TOOLCHAIN_IMAGE: ghcr.io/cpasjuste/orbis-toolchain:latest # Example homebrew toolchain
+      PS4_TOOLCHAIN_PATH: /opt/ps4toolchain  # Update if using self-hosted or Docker
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Pull PS4 toolchain Docker image
+      - name: Install build dependencies
         run: |
-          docker pull $PS4_TOOLCHAIN_IMAGE
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git pkg-config \
+              libbz2-dev libass-dev libmpv-dev ffmpeg
 
-      - name: Build in Docker
+      - name: Set PS4 toolchain environment
         run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            $PS4_TOOLCHAIN_IMAGE /bin/bash -c "\
-              apt-get update && apt-get install -y cmake pkg-config libbz2-dev libass-dev libmpv-dev ffmpeg && \
-              mkdir -p build && cd build && \
-              cmake .. -DPLATFORM_PS4=ON -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE && \
-              cmake --build . --config $CMAKE_BUILD_TYPE -j\$(nproc) && \
-              mkdir -p $PKG_OUTPUT && \
-              ps4-pkg-create --title '${{ github.repository }}' --title-id 'PPLA00001' --version '3.8' --input ./pplay --output $PKG_OUTPUT/pplay.pkg \
-            "
+          export PATH=$PS4_TOOLCHAIN_PATH/bin:$PATH
+          echo "PS4_TOOLCHAIN_PATH=$PS4_TOOLCHAIN_PATH"
+          # Check compiler
+          if ! command -v ps4-clang &> /dev/null
+          then
+              echo "Error: ps4-clang not found. Make sure PS4 toolchain is installed."
+              exit 1
+          fi
+          ps4-clang --version
+
+      - name: Configure CMake for PS4
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. \
+            -DPLATFORM_PS4=ON \
+            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE
+
+      - name: Build Project
+        run: |
+          cd build
+          cmake --build . --config $CMAKE_BUILD_TYPE -j$(nproc)
+
+      - name: Package PS4 PKG
+        run: |
+          cd build
+          mkdir -p $PKG_OUTPUT
+          # Replace with your actual packaging tool
+          ps4-pkg-create \
+            --title "${{ github.repository }}" \
+            --title-id "PPLA00001" \
+            --version "3.8" \
+            --input ./pplay \
+            --output $PKG_OUTPUT/pplay.pkg
 
       - name: Upload PKG artifact
         uses: actions/upload-artifact@v4
