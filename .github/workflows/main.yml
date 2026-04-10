@@ -1,42 +1,76 @@
-name: Build PS4 PKG (Manual)
-
+name: ps4-release
 on:
+  push:
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    env:
-      BUILD_DIR: build
-
+  ps4:
+    runs-on: ubuntu-24.04
     steps:
-    - name: Checkout with submodules
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential cmake ninja-build git zip
+      - name: Create Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pacman-package-manager wget cmake git gettext smpq
+          sudo tee -a /etc/pacman.conf > /dev/null <<TEXT
+          [pacbrew]
+          SigLevel = Optional TrustAll
+          Server = https://pacman.mydedibox.fr/pacbrew/packages/
+          TEXT
 
-    - name: Setup OpenOrbis
-      run: |
-        git clone https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git $HOME/openorbis
-        echo "OO_PS4_TOOLCHAIN=$HOME/openorbis" >> $GITHUB_ENV
+      - name: Setup pacman packages
+        run: |
+          sudo pacman --noconfirm -Sy
+          sudo pacman --noconfirm -S --needed ps4-openorbis ps4-openorbis-portlibs
 
-    - name: Configure
-      run: |
-        cmake -B $BUILD_DIR -G Ninja \
-          -DPLATFORM_PS4=ON \
-          -DCMAKE_TOOLCHAIN_FILE=$OO_PS4_TOOLCHAIN/toolchain/prospero.cmake
+          # Naprawa brakującego nagłówka w toolchainie
+          sudo mkdir -p /opt/pacbrew/ps4/openorbis/include/sys
+          echo '#include <endian.h>' | sudo tee /opt/pacbrew/ps4/openorbis/include/sys/endian.h > /dev/null
 
-    - name: Build
-      run: |
-        cmake --build $BUILD_DIR
+      - name: Configure
+        run: |
+          MAIN_CPP="src/main.cpp"
+          IO_CPP="src/io.cpp"
 
-    - name: Debug output
-      run: |
-        ls -R $BUILD_DIR
+          # 1. Pobieramy libjbc
+          if [ ! -d "src/libjbc" ]; then
+            git clone https://github.com/sleirsgoevy/ps4-libjbc.git src/libjbc
+          fi
+
+          # 2. FIX: konflikt pid_t
+          sed -i 's/typedef uint32_t pid_t;/\/\/ typedef uint32_t pid_t;/g' src/libjbc/defs.h
+
+          # 3. Dodajemy libjbc do CMake
+          if ! grep -q "libjbc/jailbreak.c" CMakeLists.txt; then
+            echo 'target_sources(pplay PRIVATE src/libjbc/jailbreak.c src/libjbc/kernelrw.c src/libjbc/utils.c)' >> CMakeLists.txt
+            echo 'target_include_directories(pplay PRIVATE src)' >> CMakeLists.txt
+          fi
+
+          # 4. Ustawiamy start w /mnt/disc + nazwa "NAPED BD"
+          if [ -f "$IO_CPP" ]; then
+            sed -i 's|return "/data/";|return "/mnt/disc/";|g' "$IO_CPP"
+            sed -i 's|devices.push_back({"/data/", "DATA", DeviceType::HDD});|devices.push_back({"/mnt/disc/", "NAPED BD", DeviceType::USB});|g' "$IO_CPP"
+          fi
+
+          # 5. Budowanie
+          rm -rf cmake-build
+          mkdir -p pscrap && echo "test" > pscrap/tmdb.key
+          mkdir -p cmake-build && cd cmake-build
+          export OPENORBIS=/opt/pacbrew/ps4/openorbis
+          cmake -G "Unix Makefiles" -DPLATFORM_PS4=ON -DCMAKE_BUILD_TYPE=Release ..
+
+      - name: Build pplay
+        run: |
+          cd cmake-build
+          make pplay_pkg -j$(nproc)
+          mv *.pkg ../
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pPlay-PS4-PKG
+          path: "*.pkg"
