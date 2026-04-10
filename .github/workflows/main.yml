@@ -1,66 +1,92 @@
-name: Build PS4 Package
+name: Build PPlay PS4 PKG
 
 on:
-  workflow_dispatch:  # Manual trigger only
+  push:
+    branches: [ main ]
+  pull_request:
 
 jobs:
   build-ps4:
-    name: Build PS4 PKG
     runs-on: ubuntu-latest
+
     env:
-      CMAKE_BUILD_TYPE: Release
-      PKG_OUTPUT: ${{ github.workspace }}/pkg
-      PS4_TOOLCHAIN_PATH: /opt/ps4toolchain
+      BUILD_DIR: build
+      OUTPUT_DIR: output
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake git pkg-config \
-              libbz2-dev libass-dev libmpv-dev ffmpeg
+    # ----------------------------
+    # Install dependencies
+    # ----------------------------
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake build-essential git zip
 
-      - name: Set PS4 toolchain environment
-        run: |
-          export PATH=$PS4_TOOLCHAIN_PATH/bin:$PATH
-          echo "PS4_TOOLCHAIN_PATH=$PS4_TOOLCHAIN_PATH"
-          # Check compiler
-          if ! command -v ps4-clang &> /dev/null
-          then
-              echo "Error: ps4-clang not found. Make sure PS4 toolchain is installed."
-              exit 1
-          fi
-          ps4-clang --version
+    # ----------------------------
+    # Setup OpenOrbis toolchain
+    # ----------------------------
+    - name: Setup OpenOrbis
+      run: |
+        git clone https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git $HOME/openorbis
+        echo "OO_PS4_TOOLCHAIN=$HOME/openorbis" >> $GITHUB_ENV
+        echo "$HOME/openorbis/bin" >> $GITHUB_PATH
 
-      - name: Configure CMake for PS4
-        run: |
-          mkdir -p build
-          cd build
-          cmake .. \
-            -DPLATFORM_PS4=ON \
-            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE
+    # ----------------------------
+    # Configure CMake
+    # ----------------------------
+    - name: Configure project
+      run: |
+        cmake -B $BUILD_DIR \
+          -DPLATFORM_PS4=ON \
+          -DCMAKE_TOOLCHAIN_FILE=$OO_PS4_TOOLCHAIN/toolchain.cmake
 
-      - name: Build Project
-        run: |
-          cd build
-          cmake --build . --config $CMAKE_BUILD_TYPE -j$(nproc)
+    # ----------------------------
+    # Build
+    # ----------------------------
+    - name: Build project
+      run: |
+        cmake --build $BUILD_DIR -j$(nproc)
 
-      - name: Package PS4 PKG
-        run: |
-          cd build
-          mkdir -p $PKG_OUTPUT
-          # Replace with your actual packaging tool
-          ps4-pkg-create \
-            --title "${{ github.repository }}" \
-            --title-id "PPLA00001" \
-            --version "3.8" \
-            --input ./pplay \
-            --output $PKG_OUTPUT/pplay.pkg
+    # ----------------------------
+    # Prepare PKG structure
+    # ----------------------------
+    - name: Prepare package files
+      run: |
+        mkdir -p $OUTPUT_DIR/pkg
 
-      - name: Upload PKG artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: pplay-ps4-pkg
-          path: $PKG_OUTPUT/pplay.pkg
+        # Assuming your binary is named pplay
+        cp $BUILD_DIR/pplay $OUTPUT_DIR/pkg/eboot.bin
+
+        # You MUST have these in your repo
+        cp -r assets/sce_sys $OUTPUT_DIR/pkg/ || true
+
+    # ----------------------------
+    # Create PKG
+    # ----------------------------
+    - name: Build PKG
+      run: |
+        mkdir -p $OUTPUT_DIR/final
+
+        # OpenOrbis packaging tool
+        create-pkg $OUTPUT_DIR/pkg $OUTPUT_DIR/final/pplay.pkg
+
+    # ----------------------------
+    # Zip artifact
+    # ----------------------------
+    - name: Zip PKG
+      run: |
+        cd $OUTPUT_DIR/final
+        zip pplay-ps4.zip pplay.pkg
+
+    # ----------------------------
+    # Upload artifact
+    # ----------------------------
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pplay-ps4-build
+        path: output/final/pplay-ps4.zip
