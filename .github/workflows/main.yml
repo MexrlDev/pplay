@@ -1,63 +1,42 @@
-name: Build PPlay PS4 PKG
+name: Build PS4 PKG (Manual)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-ps4:
+  build:
     runs-on: ubuntu-latest
 
     env:
       BUILD_DIR: build
-      OUTPUT_DIR: output
 
     steps:
-    - name: Checkout repository
+    - name: Checkout with submodules
       uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
     - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          cmake build-essential git zip
+          build-essential cmake ninja-build git zip
 
-    - name: Setup OpenOrbis Toolchain
+    - name: Setup OpenOrbis
       run: |
         git clone https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git $HOME/openorbis
         echo "OO_PS4_TOOLCHAIN=$HOME/openorbis" >> $GITHUB_ENV
-        echo "$HOME/openorbis/bin" >> $GITHUB_PATH
 
-    - name: Configure CMake
+    - name: Configure
       run: |
-        cmake -B $BUILD_DIR \
+        cmake -B $BUILD_DIR -G Ninja \
           -DPLATFORM_PS4=ON \
-          -DCMAKE_TOOLCHAIN_FILE=$OO_PS4_TOOLCHAIN/toolchain.cmake
+          -DCMAKE_TOOLCHAIN_FILE=$OO_PS4_TOOLCHAIN/toolchain/prospero.cmake
 
-    - name: Build Project
+    - name: Build
       run: |
-        cmake --build $BUILD_DIR -j$(nproc)
+        cmake --build $BUILD_DIR
 
-    - name: Prepare PKG Structure
+    - name: Debug output
       run: |
-        mkdir -p $OUTPUT_DIR/pkg
-
-        cp $BUILD_DIR/pplay $OUTPUT_DIR/pkg/eboot.bin
-
-        # Copy required PS4 metadata (must exist in repo)
-        cp -r assets/sce_sys $OUTPUT_DIR/pkg/ || true
-
-    - name: Create PKG
-      run: |
-        mkdir -p $OUTPUT_DIR/final
-        create-pkg $OUTPUT_DIR/pkg $OUTPUT_DIR/final/pplay.pkg
-
-    - name: Zip PKG
-      run: |
-        cd $OUTPUT_DIR/final
-        zip pplay-ps4.zip pplay.pkg
-
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: pplay-ps4
-        path: output/final/pplay-ps4.zip
+        ls -R $BUILD_DIR
