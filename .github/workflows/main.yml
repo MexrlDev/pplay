@@ -1,9 +1,7 @@
 name: Build PPlay PS4 PKG
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   build-ps4:
@@ -17,76 +15,49 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # ----------------------------
-    # Install dependencies
-    # ----------------------------
-    - name: Install system dependencies
+    - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
           cmake build-essential git zip
 
-    # ----------------------------
-    # Setup OpenOrbis toolchain
-    # ----------------------------
-    - name: Setup OpenOrbis
+    - name: Setup OpenOrbis Toolchain
       run: |
         git clone https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git $HOME/openorbis
         echo "OO_PS4_TOOLCHAIN=$HOME/openorbis" >> $GITHUB_ENV
         echo "$HOME/openorbis/bin" >> $GITHUB_PATH
 
-    # ----------------------------
-    # Configure CMake
-    # ----------------------------
-    - name: Configure project
+    - name: Configure CMake
       run: |
         cmake -B $BUILD_DIR \
           -DPLATFORM_PS4=ON \
           -DCMAKE_TOOLCHAIN_FILE=$OO_PS4_TOOLCHAIN/toolchain.cmake
 
-    # ----------------------------
-    # Build
-    # ----------------------------
-    - name: Build project
+    - name: Build Project
       run: |
         cmake --build $BUILD_DIR -j$(nproc)
 
-    # ----------------------------
-    # Prepare PKG structure
-    # ----------------------------
-    - name: Prepare package files
+    - name: Prepare PKG Structure
       run: |
         mkdir -p $OUTPUT_DIR/pkg
 
-        # Assuming your binary is named pplay
         cp $BUILD_DIR/pplay $OUTPUT_DIR/pkg/eboot.bin
 
-        # You MUST have these in your repo
+        # Copy required PS4 metadata (must exist in repo)
         cp -r assets/sce_sys $OUTPUT_DIR/pkg/ || true
 
-    # ----------------------------
-    # Create PKG
-    # ----------------------------
-    - name: Build PKG
+    - name: Create PKG
       run: |
         mkdir -p $OUTPUT_DIR/final
-
-        # OpenOrbis packaging tool
         create-pkg $OUTPUT_DIR/pkg $OUTPUT_DIR/final/pplay.pkg
 
-    # ----------------------------
-    # Zip artifact
-    # ----------------------------
     - name: Zip PKG
       run: |
         cd $OUTPUT_DIR/final
         zip pplay-ps4.zip pplay.pkg
 
-    # ----------------------------
-    # Upload artifact
-    # ----------------------------
-    - name: Upload artifact
+    - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pplay-ps4-build
+        name: pplay-ps4
         path: output/final/pplay-ps4.zip
